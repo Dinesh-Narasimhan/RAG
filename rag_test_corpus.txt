@@ -1,0 +1,7 @@
+The Sun is the closest star to Earth and the primary source of energy for life on our planet. It is a nearly perfect sphere of hot plasma, composed mostly of hydrogen and helium. The Sun's core is extremely hot and dense, and it is where nuclear fusion occurs, producing energy.
+
+Our solar system consists of eight planets, their moons, dwarf planets like Pluto, and countless asteroids and comets. Earth is the third planet from the Sun and the only one known to support life. Mars, often called the Red Planet, is being explored for signs of past water and potential habitability.
+
+Albert Einstein developed the theory of relativity, revolutionizing our understanding of time, space, and gravity. Isaac Newton formulated the laws of motion and universal gravitation, laying the foundation for classical mechanics.
+
+Artificial intelligence (AI) is a field of computer science that focuses on creating systems capable of tasks that usually require human intelligence. These include language understanding, problem-solving, and visual recognition. Retrieval-Augmented Generation (RAG) is an approach in AI where an LLM retrieves relevant context from external documents to improve answer quality.
