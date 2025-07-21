@@ -7,6 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1w7EIbkIlWwREXQtuKom7BF7cibbkEEmn
 """
 
+# -*- coding: utf-8 -*-
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
@@ -57,16 +58,16 @@ if uploaded_file:
 
     st.success(f"✅ Loaded and indexed {len(chunks)} text chunks.")
 
-    # Load Phi-2
+    # Load Phi-1_5
     @st.cache_resource
-    def load_phi2():
-        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2")
-        model = AutoModelForCausalLM.from_pretrained(
-            "microsoft/phi-2", torch_dtype=torch.float16
-        ).to("cuda" if torch.cuda.is_available() else "cpu")
+    def load_phi15():
+        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5")
+        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1_5").to(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         return tokenizer, model
 
-    tokenizer, model = load_phi2()
+    tokenizer, model = load_phi15()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Chat history
@@ -111,5 +112,4 @@ Answer:"""
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
         with st.chat_message("assistant"):
-            st.markdown(f"**Phi-2:** {a}")
-
+            st.markdown(f"**Phi-1.5:** {a}")
