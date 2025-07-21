@@ -38,14 +38,14 @@ if uploaded_file:
         doc = Document(uploaded_file)
         raw_text = "\n".join([para.text for para in doc.paragraphs])
 
-    # Chunking
+    # ------------------------ Chunking ------------------------
     def chunk_text(text, max_words=100):
         words = text.split()
         return [' '.join(words[i:i+max_words]) for i in range(0, len(words), max_words)]
 
     chunks = chunk_text(raw_text)
 
-    # Embedding
+    # ------------------------ Embedding ------------------------
     embedder = SentenceTransformer("all-MiniLM-L6-v2")
     chunk_embeddings = embedder.encode(chunks)
     dimension = chunk_embeddings.shape[1]
@@ -56,7 +56,7 @@ if uploaded_file:
 
     st.success(f"✅ Loaded and indexed {len(chunks)} text chunks.")
 
-    # Load Phi-1.5 (Safe on CPU or GPU)
+    # ------------------------ Load Phi-1.5 Safely ------------------------
     @st.cache_resource
     def load_phi15():
         tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5")
@@ -64,17 +64,17 @@ if uploaded_file:
         if torch.cuda.is_available():
             model = model.to(torch.float16).to("cuda")
         else:
-            model = model.float().to("cpu")  # Avoid float16 on CPU
+            model = model.float().to("cpu")
         return tokenizer, model
 
     tokenizer, model = load_phi15()
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # Chat history
+    # ------------------------ Chat History ------------------------
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # User question
+    # ------------------------ User Input + QA ------------------------
     user_input = st.text_input("💬 Ask a question", placeholder="e.g., What is deep learning?")
     if st.button("🔍 Get Answer") and user_input.strip() != "":
         # Semantic search
@@ -107,7 +107,7 @@ Answer:"""
         response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):].strip()
         st.session_state.chat_history.append((user_input, response))
 
-    # Show chat history
+    # ------------------------ Display Chat ------------------------
     for q, a in st.session_state.chat_history[::-1]:
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
