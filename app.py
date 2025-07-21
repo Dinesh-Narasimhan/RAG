@@ -13,8 +13,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
-import tempfile
-import os
 import torch
 import docx as docx_module
 from docx import Document
@@ -35,7 +33,7 @@ if uploaded_file:
         raw_text = uploaded_file.read().decode("utf-8", errors="ignore")
     elif ext == "pdf":
         reader = PyPDF2.PdfReader(uploaded_file)
-        raw_text = "\n".join([page.extract_text() for page in reader.pages])
+        raw_text = "\n".join([page.extract_text() or "" for page in reader.pages])
     elif ext == "docx":
         doc = Document(uploaded_file)
         raw_text = "\n".join([para.text for para in doc.paragraphs])
@@ -58,13 +56,15 @@ if uploaded_file:
 
     st.success(f"✅ Loaded and indexed {len(chunks)} text chunks.")
 
-    # Load Phi-1_5
+    # Load Phi-1.5 (Safe on CPU or GPU)
     @st.cache_resource
     def load_phi15():
         tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5")
-        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1_5").to(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1_5")
+        if torch.cuda.is_available():
+            model = model.to(torch.float16).to("cuda")
+        else:
+            model = model.float().to("cpu")  # Avoid float16 on CPU
         return tokenizer, model
 
     tokenizer, model = load_phi15()
