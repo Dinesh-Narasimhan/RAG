@@ -15,7 +15,8 @@ import numpy as np
 import tempfile
 import os
 import torch
-import docx
+import docx as docx_module
+from docx import Document
 import PyPDF2
 
 # ------------------------ Setup ------------------------
@@ -35,7 +36,7 @@ if uploaded_file:
         reader = PyPDF2.PdfReader(uploaded_file)
         raw_text = "\n".join([page.extract_text() for page in reader.pages])
     elif ext == "docx":
-        doc = docx.Document(uploaded_file)
+        doc = Document(uploaded_file)
         raw_text = "\n".join([para.text for para in doc.paragraphs])
 
     # Chunking
