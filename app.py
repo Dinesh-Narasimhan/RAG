@@ -14,14 +14,13 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import torch
-import docx as docx_module
 from docx import Document
 import PyPDF2
 
 # ------------------------ Setup ------------------------
 st.set_page_config(page_title="RAG Tutor", layout="wide")
-st.title("📘 ASK YOUR NOTES ")
-st.markdown("Ask questions from your uploaded document.")
+st.title("📘 ASK YOUR NOTES")
+st.markdown("Upload your study material and ask questions based on it.")
 
 # ------------------------ File Upload ------------------------
 uploaded_file = st.file_uploader("Upload a .txt, .pdf, or .docx file", type=["txt", "pdf", "docx"])
@@ -54,21 +53,16 @@ if uploaded_file:
     faiss_index = faiss.IndexFlatL2(dimension)
     faiss_index.add(np.array(chunk_embeddings))
 
-    st.success(f"✅ Loaded and indexed {len(chunks)} text chunks.")
+    st.success(f"✅ Loaded and indexed {len(chunks)} chunks from document.")
 
-    # ------------------------ Load Phi-1.5 Safely ------------------------
+    # ------------------------ Load Phi-1 ------------------------
     @st.cache_resource
-    def load_phi15():
-        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5")
-        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1_5")
-        if torch.cuda.is_available():
-            model = model.to(torch.float16).to("cuda")
-        else:
-            model = model.float().to("cpu")
-        return tokenizer, model
+    def load_phi1():
+        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1")
+        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1")
+        return tokenizer, model.float().to("cpu")  # CPU-safe
 
-    tokenizer, model = load_phi15()
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tokenizer, model = load_phi1()
 
     # ------------------------ Chat History ------------------------
     if "chat_history" not in st.session_state:
@@ -90,18 +84,17 @@ Context: {context}
 Question: {user_input}
 Answer:"""
 
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to("cpu")
 
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=700,
-                min_length=450,
-                do_sample=True,
+                max_new_tokens=500,
+                temperature=0.7,
                 top_k=50,
                 top_p=0.95,
-                temperature=0.7,
-                eos_token_id=tokenizer.eos_token_id
+                do_sample=True,
+                eos_token_id=tokenizer.eos_token_id,
             )
 
         response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):].strip()
@@ -112,4 +105,5 @@ Answer:"""
         with st.chat_message("user"):
             st.markdown(f"**You:** {q}")
         with st.chat_message("assistant"):
-            st.markdown(f"**Phi-1.5:** {a}")
+            st.markdown(f"**Phi-1:** {a}")
+
