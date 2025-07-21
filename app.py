@@ -17,93 +17,57 @@ import torch
 from docx import Document
 import PyPDF2
 
-# ------------------------ Setup ------------------------
 st.set_page_config(page_title="RAG Tutor", layout="wide")
 st.title("📘 ASK YOUR NOTES")
-st.markdown("Upload your study material and ask questions based on it.")
+st.markdown("Upload your document and ask questions.")
 
-# ------------------------ File Upload ------------------------
 uploaded_file = st.file_uploader("Upload a .txt, .pdf, or .docx file", type=["txt", "pdf", "docx"])
 if uploaded_file:
-    ext = uploaded_file.name.split('.')[-1]
-    raw_text = ""
-
-    if ext == "txt":
-        raw_text = uploaded_file.read().decode("utf-8", errors="ignore")
-    elif ext == "pdf":
+    if uploaded_file.name.endswith(".txt"):
+        text = uploaded_file.read().decode("utf-8", errors="ignore")
+    elif uploaded_file.name.endswith(".pdf"):
         reader = PyPDF2.PdfReader(uploaded_file)
-        raw_text = "\n".join([page.extract_text() or "" for page in reader.pages])
-    elif ext == "docx":
+        text = "\n".join([p.extract_text() or "" for p in reader.pages])
+    else:
         doc = Document(uploaded_file)
-        raw_text = "\n".join([para.text for para in doc.paragraphs])
+        text = "\n".join([para.text for para in doc.paragraphs])
 
-    # ------------------------ Chunking ------------------------
-    def chunk_text(text, max_words=100):
-        words = text.split()
-        return [' '.join(words[i:i+max_words]) for i in range(0, len(words), max_words)]
-
-    chunks = chunk_text(raw_text)
-
-    # ------------------------ Embedding ------------------------
+    chunks = [" ".join(text.split()[i:i+100]) for i in range(0, len(text.split()), 100)]
     embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    chunk_embeddings = embedder.encode(chunks)
-    dimension = chunk_embeddings.shape[1]
+    embeds = embedder.encode(chunks)
+    faiss_index = faiss.IndexFlatL2(embeds.shape[1])
+    faiss_index.add(np.array(embeds))
+    st.success(f"Indexed {len(chunks)} chunks.")
 
-    # Build FAISS index
-    faiss_index = faiss.IndexFlatL2(dimension)
-    faiss_index.add(np.array(chunk_embeddings))
-
-    st.success(f"✅ Loaded and indexed {len(chunks)} chunks from document.")
-
-    # ------------------------ Load Phi-1 ------------------------
     @st.cache_resource
-    def load_phi1():
-        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1")
-        model = AutoModelForCausalLM.from_pretrained("microsoft/phi-1")
-        return tokenizer, model.float().to("cpu")  # CPU-safe
+    def load_tinyllama():
+        tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+        model = AutoModelForCausalLM.from_pretrained(
+            "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            torch_dtype=torch.float32,
+            device_map="auto"
+        )
+        return tokenizer, model
 
-    tokenizer, model = load_phi1()
+    tokenizer, model = load_tinyllama()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
 
-    # ------------------------ Chat History ------------------------
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # ------------------------ User Input + QA ------------------------
-    user_input = st.text_input("💬 Ask a question", placeholder="e.g., What is deep learning?")
-    if st.button("🔍 Get Answer") and user_input.strip() != "":
-        # Semantic search
-        q_embedding = embedder.encode([user_input])
-        D, I = faiss_index.search(np.array(q_embedding), k=1)
-        context = chunks[I[0][0]]
+    user_input = st.text_input("💬 Ask a question")
+    if st.button("🔍 Get Answer") and user_input:
+        q_emb = embedder.encode([user_input])
+        _, I = faiss_index.search(np.array(q_emb), k=1)
+        ctx = chunks[I[0][0]]
 
-        # Build prompt
-        prompt = f"""You are a helpful tutor. Using the context provided, write a detailed, clear answer to the question. Make sure it's at least 300 words long.
-
-Context: {context}
-
-Question: {user_input}
-Answer:"""
-
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to("cpu")
-
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=500,
-                temperature=0.7,
-                top_k=50,
-                top_p=0.95,
-                do_sample=True,
-                eos_token_id=tokenizer.eos_token_id,
-            )
-
+        prompt = f"Context: {ctx}\nQuestion: {user_input}\nAnswer:"
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
+        outputs = model.generate(**inputs, max_new_tokens=300, temperature=0.7)
         response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):].strip()
         st.session_state.chat_history.append((user_input, response))
 
-    # ------------------------ Display Chat ------------------------
     for q, a in st.session_state.chat_history[::-1]:
-        with st.chat_message("user"):
-            st.markdown(f"**You:** {q}")
-        with st.chat_message("assistant"):
-            st.markdown(f"**Phi-1:** {a}")
-
+        st.chat_message("user").markdown(f"**You:** {q}")
+        st.chat_message("assistant").markdown(f"**TinyLlama:** {a}")
