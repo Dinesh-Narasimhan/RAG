@@ -19,21 +19,22 @@ import docx
 import fitz  # PyMuPDF
 import tempfile
 
-# Load embedder and Phi-2 once
+# Load embedder and Phi-1.5 model only once
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2")
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5", cache_dir="models")
     model = AutoModelForCausalLM.from_pretrained(
-        "microsoft/phi-2",
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
-    ).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        "microsoft/phi-1_5",
+        torch_dtype=torch.float32,  # Use float32 for CPU
+        cache_dir="models"
+    ).to(torch.device("cpu"))
     model.eval()
     return embedder, tokenizer, model
 
 embedder, tokenizer, model = load_models()
 
-# File reading logic
+# File reader for txt, docx, pdf
 def read_file(file_path, ext):
     if ext == ".txt":
         return open(file_path, 'r', encoding='utf-8').read()
@@ -46,20 +47,24 @@ def read_file(file_path, ext):
     else:
         return ""
 
+# Chunk text into ~100-word blocks
 def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-st.title("🧠 Ask Your Notes with Phi-2 (RAG)")
+# Streamlit UI
+st.title("🧠 Ask Your Notes with Phi-1.5 (RAG)")
 
-uploaded_file = st.file_uploader("📂 Upload .txt, .docx, or .pdf file", type=["txt", "docx", "pdf"])
+uploaded_file = st.file_uploader("📂 Upload a .txt, .docx, or .pdf file", type=["txt", "docx", "pdf"])
+
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(uploaded_file.read())
         file_path = tmp.name
+
     ext = os.path.splitext(uploaded_file.name)[-1].lower()
     full_text = read_file(file_path, ext)
-    
+
     chunks = chunk_text(full_text)
     st.success(f"✅ Text split into {len(chunks)} chunks")
 
@@ -98,4 +103,3 @@ Answer:"""
 
         st.markdown("### 🧠 Answer:")
         st.write(answer)
-
