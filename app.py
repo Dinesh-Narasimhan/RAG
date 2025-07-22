@@ -6,9 +6,10 @@ import numpy as np
 import faiss
 import os
 import docx
-import fitz  # PyMuPDF
+import pdfplumber  # ✅ Replaces fitz / PyMuPDF
 import tempfile
 
+# Load models only once
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -24,6 +25,7 @@ def load_models():
 
 embedder, tokenizer, model = load_models()
 
+# Read .txt, .docx, .pdf using light libraries
 def read_file(file_path, ext):
     if ext == ".txt":
         return open(file_path, "r", encoding="utf-8").read()
@@ -31,8 +33,8 @@ def read_file(file_path, ext):
         doc = docx.Document(file_path)
         return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
     elif ext == ".pdf":
-        pdf = fitz.open(file_path)
-        return "\n".join([page.get_text() for page in pdf])
+        with pdfplumber.open(file_path) as pdf:
+            return "\n".join([page.extract_text() or '' for page in pdf.pages])
     else:
         return ""
 
