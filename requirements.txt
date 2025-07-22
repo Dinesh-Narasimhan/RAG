@@ -4,4 +4,4 @@ transformers>=4.41.1
 torch
 faiss-cpu
 python-docx
-PyMuPDF==1.23.9
+PyMuPDF==1.23.5
