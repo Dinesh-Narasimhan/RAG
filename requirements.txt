@@ -1,7 +1,7 @@
+streamlit
+sentence-transformers
 transformers>=4.41.1
 torch
-sentence-transformers
 faiss-cpu
 python-docx
 PyMuPDF==1.23.9
-streamlit
