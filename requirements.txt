@@ -3,4 +3,4 @@ sentence-transformers==2.2.2
 transformers==4.36.2
 faiss-cpu
 python-docx
-PyMuPDF==1.22.5
+PyMuPDF==1.21.1
