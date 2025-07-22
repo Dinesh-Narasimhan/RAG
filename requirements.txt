@@ -1,6 +1,6 @@
 streamlit
-sentence-transformers==2.2.2
-transformers==4.36.2
-faiss-cpu
+sentence-transformers
+transformers
+scikit-learn
+pdfplumber
 python-docx
-pdfplumber==0.10.3
