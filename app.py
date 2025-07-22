@@ -10,31 +10,25 @@ Original file is located at
 # -*- coding: utf-8 -*-
 import streamlit as st
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import T5Tokenizer, T5ForConditionalGeneration
 import torch
 import numpy as np
 import faiss
 import os
 import docx
-import fitz  # PyMuPDF
+import fitz
 import tempfile
 
-# Load embedder and Phi-1.5 model only once
+# Load models once
 @st.cache_resource
 def load_models():
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-1_5", cache_dir="models")
-    model = AutoModelForCausalLM.from_pretrained(
-        "microsoft/phi-1_5",
-        torch_dtype=torch.float32,  # Use float32 for CPU
-        cache_dir="models"
-    ).to(torch.device("cpu"))
-    model.eval()
+    tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small", cache_dir="models")
+    model = T5ForConditionalGeneration.from_pretrained("google/flan-t5-small", cache_dir="models").to("cpu")
     return embedder, tokenizer, model
 
 embedder, tokenizer, model = load_models()
 
-# File reader for txt, docx, pdf
 def read_file(file_path, ext):
     if ext == ".txt":
         return open(file_path, 'r', encoding='utf-8').read()
@@ -47,15 +41,13 @@ def read_file(file_path, ext):
     else:
         return ""
 
-# Chunk text into ~100-word blocks
 def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-# Streamlit UI
-st.title("🧠 Ask Your Notes with Phi-1.5 (RAG)")
+st.title("📚 Ask Your Notes — Fast & Free (Flan-T5)")
 
-uploaded_file = st.file_uploader("📂 Upload a .txt, .docx, or .pdf file", type=["txt", "docx", "pdf"])
+uploaded_file = st.file_uploader("📂 Upload your .txt, .docx, or .pdf", type=["txt", "docx", "pdf"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -72,34 +64,18 @@ if uploaded_file:
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    question = st.text_input("❓ Ask a question from your notes:")
+    question = st.text_input("❓ Ask your question:")
     if question:
         question_embedding = embedder.encode([question])
         D, I = index.search(np.array(question_embedding), k=1)
         retrieved_chunk = chunks[I[0][0]]
 
-        prompt = f"""You are a knowledgeable tutor. Using the context provided, write a very detailed and comprehensive answer to the question below. Make sure the answer is clear, complete, and at least 300 words long.
+        prompt = f"Answer this question using the context: {retrieved_chunk}\nQuestion: {question}"
 
-Context: {retrieved_chunk}
-
-Question: {question}
-Answer:"""
-
-        input_ids = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(model.device)
-
+        input_ids = tokenizer(prompt, return_tensors="pt").input_ids
         with torch.no_grad():
-            output = model.generate(
-                **input_ids,
-                max_new_tokens=700,
-                min_length=450,
-                do_sample=True,
-                top_k=50,
-                top_p=0.95,
-                temperature=0.7,
-                eos_token_id=tokenizer.eos_token_id
-            )
-        decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-        answer = decoded[len(prompt):].strip()
+            outputs = model.generate(input_ids, max_new_tokens=300)
+        answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        st.markdown("### 🧠 Answer:")
+        st.markdown("### 💡 Answer")
         st.write(answer)
