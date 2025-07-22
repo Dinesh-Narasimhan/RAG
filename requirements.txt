@@ -1,6 +1,6 @@
-streamlit
-sentence-transformers
-transformers
-scikit-learn
-pdfplumber
+streamlit==1.47.0
+sentence-transformers==2.2.2
+faiss-cpu
+pdfplumber==0.11.7
 python-docx
+llama-cpp-python==0.2.53
