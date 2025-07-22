@@ -3,5 +3,5 @@ torch
 sentence-transformers
 faiss-cpu
 python-docx
-PyPDF2
+PyMuPDF==1.23.9
 streamlit
