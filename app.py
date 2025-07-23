@@ -6,25 +6,28 @@ import numpy as np
 import faiss
 import os
 import docx
-import pdfplumber  # ✅ lighter than PyMuPDF
+import pdfplumber
 import tempfile
 
-# Load models only once
 @st.cache_resource
 def load_models():
-    embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # ✅ small & fast (~22MB)
-    tokenizer = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0", cache_dir="models")
+    embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # ✅ small (~22MB)
+    tokenizer = AutoTokenizer.from_pretrained(
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        cache_dir="models",
+        trust_remote_code=True
+    )
     model = AutoModelForCausalLM.from_pretrained(
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         torch_dtype=torch.float32,
-        cache_dir="models"
+        cache_dir="models",
+        trust_remote_code=True
     ).to("cpu")
     model.eval()
     return embedder, tokenizer, model
 
 embedder, tokenizer, model = load_models()
 
-# Read files (.txt, .docx, .pdf)
 def read_file(file_path, ext):
     if ext == ".txt":
         return open(file_path, "r", encoding="utf-8").read()
@@ -40,8 +43,8 @@ def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-# Streamlit UI
 st.title("🧠 Ask Your Notes (TinyLlama + MiniLM-L3)")
+
 uploaded_file = st.file_uploader("📂 Upload .txt, .docx, or .pdf", type=["txt", "docx", "pdf"])
 
 if uploaded_file:
