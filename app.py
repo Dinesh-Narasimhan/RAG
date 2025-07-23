@@ -1,3 +1,6 @@
+# ✅ Streamlit Cloud-Compatible RAG App (using GPT-2)
+# ⚡ Lightweight, Open-Source & Free
+
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -6,23 +9,14 @@ import numpy as np
 import faiss
 import os
 import docx
-import pdfplumber
+import pdfplumber  # ✅ Lighter PDF reader
 import tempfile
 
 @st.cache_resource
 def load_models():
-    embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # ✅ small (~22MB)
-    tokenizer = AutoTokenizer.from_pretrained(
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        cache_dir="models",
-        trust_remote_code=True
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        torch_dtype=torch.float32,
-        cache_dir="models",
-        trust_remote_code=True
-    ).to("cpu")
+    embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # ✅ ~22MB
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")  # ✅ MIT licensed
+    model = AutoModelForCausalLM.from_pretrained("gpt2").to("cpu")
     model.eval()
     return embedder, tokenizer, model
 
@@ -43,9 +37,8 @@ def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-st.title("🧠 Ask Your Notes (TinyLlama + MiniLM-L3)")
-
-uploaded_file = st.file_uploader("📂 Upload .txt, .docx, or .pdf", type=["txt", "docx", "pdf"])
+st.title("📄 RAG Question Answering (GPT-2 + MiniLM-L3)")
+uploaded_file = st.file_uploader("Upload a .txt, .docx, or .pdf file", type=["txt", "docx", "pdf"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -62,13 +55,13 @@ if uploaded_file:
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    question = st.text_input("❓ Ask your question:")
+    question = st.text_input("Ask a question:")
     if question:
         question_embedding = embedder.encode([question])
         D, I = index.search(np.array(question_embedding), k=1)
         retrieved_chunk = chunks[I[0][0]]
 
-        prompt = f"""You are a helpful tutor. Use the context to answer the question in detail (at least 300 words).
+        prompt = f"""You are a helpful assistant. Using the context below, answer the question in detail.
 
 Context: {retrieved_chunk}
 
@@ -79,14 +72,14 @@ Answer:"""
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=700,
-                min_length=450,
+                max_new_tokens=400,
                 do_sample=True,
+                temperature=0.7,
                 top_k=50,
                 top_p=0.95,
-                temperature=0.7,
                 eos_token_id=tokenizer.eos_token_id
             )
+
         decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
         answer = decoded[len(prompt):].strip()
 
