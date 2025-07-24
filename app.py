@@ -9,9 +9,10 @@ import docx
 import pdfplumber
 import tempfile
 
+# Load embedding model & GPT-2 once
 @st.cache_resource
 def load_models():
-    embedder = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
+    embedder = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")  # ~22MB
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     model = AutoModelForCausalLM.from_pretrained("gpt2").to("cpu")
     model.eval()
@@ -19,6 +20,7 @@ def load_models():
 
 embedder, tokenizer, model = load_models()
 
+# Read supported file types
 def read_file(file_path, ext):
     if ext == ".txt":
         return open(file_path, "r", encoding="utf-8").read()
@@ -30,13 +32,15 @@ def read_file(file_path, ext):
             return "\n".join([page.extract_text() or '' for page in pdf.pages])
     return ""
 
+# Chunk text (~100 words each)
 def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-st.title("🧠 Ask Your Notes with RAG")
+# Streamlit UI
+st.title("📘 Ask Your Notes (Lightweight RAG using GPT-2)")
 
-uploaded_file = st.file_uploader("📂 Upload .txt, .docx, or .pdf", type=["txt", "docx", "pdf"])
+uploaded_file = st.file_uploader("📂 Upload your notes (.txt, .docx, .pdf)", type=["txt", "docx", "pdf"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -47,31 +51,32 @@ if uploaded_file:
     full_text = read_file(file_path, ext)
 
     chunks = chunk_text(full_text)
-    st.success(f"✅ Text split into {len(chunks)} chunks.")
+    st.success(f"✅ File processed and split into {len(chunks)} chunks.")
 
+    # Embed and index chunks
     embeddings = embedder.encode(chunks)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    question = st.text_input("❓ Ask your question:")
+    question = st.text_input("❓ Ask a question from your notes:")
     if question:
-        question_embedding = embedder.encode([question])
-        D, I = index.search(np.array(question_embedding), k=1)
-        retrieved_chunk = chunks[I[0][0]]
+        q_embed = embedder.encode([question])
+        _, I = index.search(np.array(q_embed), k=1)
+        context = chunks[I[0][0]]
 
-        # No self-questioning in output prompt
-        prompt = f"Context:\n{retrieved_chunk}\n\nAnswer the following question clearly and thoroughly (minimum 300 words): {question}\n\nAnswer:"
+        # Better prompt to avoid repeating
+        prompt = f"Based on the following context, explain in detail:\n\n{context}\n\nWrite a clear, helpful explanation (at least 300 words) without repeating the same phrases or the original question."
 
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=700,
-                min_length=450,
+                max_new_tokens=500,
+                min_length=300,
                 do_sample=True,
-                top_k=40,
-                top_p=0.9,
-                temperature=0.8,
+                top_k=30,
+                top_p=0.85,
+                temperature=0.7,
                 eos_token_id=tokenizer.eos_token_id
             )
         decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
