@@ -1,6 +1,3 @@
-# ✅ Streamlit Cloud-Compatible RAG App (using GPT-2)
-# ⚡ Lightweight, Open-Source & Free
-
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -9,13 +6,13 @@ import numpy as np
 import faiss
 import os
 import docx
-import pdfplumber  # ✅ Lighter PDF reader
+import pdfplumber
 import tempfile
 
 @st.cache_resource
 def load_models():
-    embedder = SentenceTransformer("paraphrase-MiniLM-L3-v2")  # ✅ ~22MB
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")  # ✅ MIT licensed
+    embedder = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
     model = AutoModelForCausalLM.from_pretrained("gpt2").to("cpu")
     model.eval()
     return embedder, tokenizer, model
@@ -37,8 +34,9 @@ def chunk_text(text, max_words=100):
     words = text.split()
     return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
 
-st.title("📄 RAG Question Answering (GPT-2 + MiniLM-L3)")
-uploaded_file = st.file_uploader("Upload a .txt, .docx, or .pdf file", type=["txt", "docx", "pdf"])
+st.title("🧠 Ask Your Notes with RAG")
+
+uploaded_file = st.file_uploader("📂 Upload .txt, .docx, or .pdf", type=["txt", "docx", "pdf"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -49,37 +47,33 @@ if uploaded_file:
     full_text = read_file(file_path, ext)
 
     chunks = chunk_text(full_text)
-    st.success(f"✅ Text split into {len(chunks)} chunks")
+    st.success(f"✅ Text split into {len(chunks)} chunks.")
 
     embeddings = embedder.encode(chunks)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
 
-    question = st.text_input("Ask a question:")
+    question = st.text_input("❓ Ask your question:")
     if question:
         question_embedding = embedder.encode([question])
         D, I = index.search(np.array(question_embedding), k=1)
         retrieved_chunk = chunks[I[0][0]]
 
-        prompt = f"""You are a helpful assistant. Using the context below, answer the question in detail.
+        # No self-questioning in output prompt
+        prompt = f"Context:\n{retrieved_chunk}\n\nAnswer the following question clearly and thoroughly (minimum 300 words): {question}\n\nAnswer:"
 
-Context: {retrieved_chunk}
-
-Question: {question}
-Answer:"""
-
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to("cpu")
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=400,
+                max_new_tokens=700,
+                min_length=450,
                 do_sample=True,
-                temperature=0.7,
-                top_k=50,
-                top_p=0.95,
+                top_k=40,
+                top_p=0.9,
+                temperature=0.8,
                 eos_token_id=tokenizer.eos_token_id
             )
-
         decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
         answer = decoded[len(prompt):].strip()
 
