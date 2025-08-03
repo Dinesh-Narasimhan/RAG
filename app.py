@@ -1,86 +1,104 @@
 import streamlit as st
-from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
-import numpy as np
+from sentence_transformers import SentenceTransformer
 import faiss
-import os
-import docx
-import pdfplumber
+import numpy as np
 import tempfile
+import os
+import torch
+import docx
+import PyPDF2
 
-# Load embedding model & GPT-2 once
-@st.cache_resource
-def load_models():
-    embedder = SentenceTransformer("sentence-transformers/paraphrase-MiniLM-L3-v2")  # ~22MB
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    model = AutoModelForCausalLM.from_pretrained("gpt2").to("cpu")
-    model.eval()
-    return embedder, tokenizer, model
+# ------------------------ Setup ------------------------
+st.set_page_config(page_title="RAG Tutor", layout="wide")
+st.title("📘 ASK YOUR NOTES ")
+st.markdown("Ask questions from your uploaded document.")
 
-embedder, tokenizer, model = load_models()
-
-# Read supported file types
-def read_file(file_path, ext):
-    if ext == ".txt":
-        return open(file_path, "r", encoding="utf-8").read()
-    elif ext == ".docx":
-        doc = docx.Document(file_path)
-        return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-    elif ext == ".pdf":
-        with pdfplumber.open(file_path) as pdf:
-            return "\n".join([page.extract_text() or '' for page in pdf.pages])
-    return ""
-
-# Chunk text (~100 words each)
-def chunk_text(text, max_words=100):
-    words = text.split()
-    return [' '.join(words[i:i + max_words]) for i in range(0, len(words), max_words)]
-
-# Streamlit UI
-st.title("📘 Ask Your Notes (Lightweight RAG using GPT-2)")
-
-uploaded_file = st.file_uploader("📂 Upload your notes (.txt, .docx, .pdf)", type=["txt", "docx", "pdf"])
-
+# ------------------------ File Upload ------------------------
+uploaded_file = st.file_uploader("Upload a .txt, .pdf, or .docx file", type=["txt", "pdf", "docx"])
 if uploaded_file:
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(uploaded_file.read())
-        file_path = tmp.name
+    ext = uploaded_file.name.split('.')[-1]
+    raw_text = ""
 
-    ext = os.path.splitext(uploaded_file.name)[-1].lower()
-    full_text = read_file(file_path, ext)
+    if ext == "txt":
+        raw_text = uploaded_file.read().decode("utf-8", errors="ignore")
+    elif ext == "pdf":
+        reader = PyPDF2.PdfReader(uploaded_file)
+        raw_text = "\n".join([page.extract_text() for page in reader.pages])
+    elif ext == "docx":
+        doc = docx.Document(uploaded_file)
+        raw_text = "\n".join([para.text for para in doc.paragraphs])
 
-    chunks = chunk_text(full_text)
-    st.success(f"✅ File processed and split into {len(chunks)} chunks.")
+    # Chunking
+    def chunk_text(text, max_words=100):
+        words = text.split()
+        return [' '.join(words[i:i+max_words]) for i in range(0, len(words), max_words)]
 
-    # Embed and index chunks
-    embeddings = embedder.encode(chunks)
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(np.array(embeddings))
+    chunks = chunk_text(raw_text)
 
-    question = st.text_input("❓ Ask a question from your notes:")
-    if question:
-        q_embed = embedder.encode([question])
-        _, I = index.search(np.array(q_embed), k=1)
+    # Embedding
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    chunk_embeddings = embedder.encode(chunks)
+    dimension = chunk_embeddings.shape[1]
+
+    # Build FAISS index
+    faiss_index = faiss.IndexFlatL2(dimension)
+    faiss_index.add(np.array(chunk_embeddings))
+
+    st.success(f"✅ Loaded and indexed {len(chunks)} text chunks.")
+
+    # Load Phi-2
+    @st.cache_resource
+    def load_phi2():
+        tokenizer = AutoTokenizer.from_pretrained("microsoft/phi-2")
+        model = AutoModelForCausalLM.from_pretrained(
+            "microsoft/phi-2", torch_dtype=torch.float16
+        ).to("cuda" if torch.cuda.is_available() else "cpu")
+        return tokenizer, model
+
+    tokenizer, model = load_phi2()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Chat history
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # User question
+    user_input = st.text_input("💬 Ask a question", placeholder="e.g., What is deep learning?")
+    if st.button("🔍 Get Answer") and user_input.strip() != "":
+        # Semantic search
+        q_embedding = embedder.encode([user_input])
+        D, I = faiss_index.search(np.array(q_embedding), k=1)
         context = chunks[I[0][0]]
 
-        # Better prompt to avoid repeating
-        prompt = f"Based on the following context, explain in detail:\n\n{context}\n\nWrite a clear, helpful explanation (at least 300 words) without repeating the same phrases or the original question."
+        # Build prompt
+        prompt = f"""You are a helpful tutor. Using the context provided, write a detailed, clear answer to the question. Make sure it's at least 300 words long.
 
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+Context: {context}
+
+Question: {user_input}
+Answer:"""
+
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
+
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=500,
-                min_length=300,
+                max_new_tokens=700,
+                min_length=450,
                 do_sample=True,
-                top_k=30,
-                top_p=0.85,
+                top_k=50,
+                top_p=0.95,
                 temperature=0.7,
                 eos_token_id=tokenizer.eos_token_id
             )
-        decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        answer = decoded[len(prompt):].strip()
 
-        st.markdown("### 🧠 Answer")
-        st.write(answer)
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)[len(prompt):].strip()
+        st.session_state.chat_history.append((user_input, response))
+
+    # Show chat history
+    for q, a in st.session_state.chat_history[::-1]:
+        with st.chat_message("user"):
+            st.markdown(f"**You:** {q}")
+        with st.chat_message("assistant"):
+            st.markdown(f"**Phi-2:** {a}")
