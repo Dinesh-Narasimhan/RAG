@@ -1,7 +1,7 @@
 streamlit
+transformers>=4.38.0
 sentence-transformers
-transformers
-torch
 faiss-cpu
+torch
 python-docx
-pdfplumber
+PyPDF2
